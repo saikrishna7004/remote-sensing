@@ -6,6 +6,7 @@ import sys
 import datacube
 import matplotlib.pyplot as plt
 import matplotlib
+import matplotlib.gridspec as gridspec
 matplotlib.use('Agg')
 from datacube.utils.cog import write_cog
 from dea_tools.plotting import rgb
@@ -49,28 +50,30 @@ def analysis(analysis_type):
 
             res_start = res.sel(time='2022').mean(dim='time')
             res_end = res.sel(time='2023').mean(dim='time')
-
-            plt.figure(figsize=(8, 7))
-
-            plt.subplot(2, 2, 1)
-            plt.imshow(res_start, cmap='RdYlBu', vmin=-0.5, vmax=0.5)
-            plt.title('Vegitation 2022')
-
-            plt.subplot(2, 2, 2)
-            plt.imshow(res_end, cmap='RdYlBu', vmin=-0.5, vmax=0.5)
-            plt.title('Vegitation 2023')
-
             res_diff = res_end - res_start
 
-            plt.subplot(2, 2, 3)
             if analysis_type=="ndvi":
-                title = 'Vegitation Change 2022-2023'
+                title = 'Vegetation'
                 cmap = 'RdYlBu'
             elif analysis_type=="ndwi":
-                title = 'Water Change 2022-2023'
+                title = 'Water'
                 cmap = 'RdBu'
+
+            plt.figure(figsize=(10, 6))
+            gs = gridspec.GridSpec(2, 2)
+
+            plt.subplot(gs[0, 0])
+            plt.imshow(res_start, cmap='RdYlBu', vmin=-0.5, vmax=0.5)
+            plt.title(title+' '+data['fromdate'][:4])
+
+            plt.subplot(gs[0, 1])
+            plt.imshow(res_end, cmap='RdYlBu', vmin=-0.5, vmax=0.5)
+            plt.title(title+' '+data['todate'][:4])
+
+            plt.subplot(gs[1, :])
             plt.imshow(res_diff, cmap=cmap, vmin=-0.5, vmax=0.5)
-            plt.title(title)
+            plt.title(title+' Change')
+
             plt.colorbar(shrink=0.5)
 
             now = datetime.now()
