@@ -63,15 +63,15 @@ def analysis(analysis_type):
             gs = gridspec.GridSpec(2, 2)
 
             plt.subplot(gs[0, 0])
-            plt.imshow(res_start, cmap='RdYlBu', vmin=-0.5, vmax=0.5)
+            plt.imshow(res_start, cmap=cmap, vmin=-1, vmax=1)
             plt.title(title+' '+data['fromdate'][:4])
 
             plt.subplot(gs[0, 1])
-            plt.imshow(res_end, cmap='RdYlBu', vmin=-0.5, vmax=0.5)
+            plt.imshow(res_end, cmap=cmap, vmin=-1, vmax=1)
             plt.title(title+' '+data['todate'][:4])
 
             plt.subplot(gs[1, :])
-            plt.imshow(res_diff, cmap=cmap, vmin=-0.5, vmax=0.5)
+            plt.imshow(res_diff, cmap=cmap, vmin=-1, vmax=1)
             plt.title(title+' Change')
 
             plt.colorbar(shrink=0.5)
