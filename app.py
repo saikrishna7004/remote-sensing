@@ -92,4 +92,4 @@ def analysis(analysis_type):
     return jsonify({"error": "Invalid method: "+request.method})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0')
