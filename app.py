@@ -1,15 +1,11 @@
 from flask import Flask, render_template, request, redirect, jsonify
 from datetime import datetime
-import io, urllib, base64, json
-
-import sys
+import io, urllib, base64
 import datacube
 import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.gridspec as gridspec
 matplotlib.use('Agg')
-from datacube.utils.cog import write_cog
-from dea_tools.plotting import rgb
 
 dc = datacube.Datacube(app="Flask_Text")
 
@@ -48,8 +44,8 @@ def analysis(analysis_type):
             else:
                 return jsonify({"error": "Invalid type"})
 
-            res_start = res.sel(time='2022').mean(dim='time')
-            res_end = res.sel(time='2023').mean(dim='time')
+            res_start = res.sel(time=time_range[0][:4]).mean(dim='time')
+            res_end = res.sel(time=time_range[1][:4]).mean(dim='time')
             res_diff = res_end - res_start
 
             if analysis_type=="ndvi":
