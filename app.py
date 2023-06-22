@@ -1,11 +1,28 @@
+import json
 from flask import Flask, render_template, request, redirect, jsonify
 from datetime import datetime
 import io, urllib, base64
 import datacube
+from datacube.utils.geometry import CRS
+from pyproj import Transformer
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from sklearn.ensemble import RandomForestRegressor
+
+import plotly.graph_objs as go
+import plotly.offline as pyoff
+import plotly.io as pio
+
 import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.gridspec as gridspec
+import warnings
 matplotlib.use('Agg')
+warnings.filterwarnings("ignore")
+
 
 dc = datacube.Datacube(app="Flask_Text")
 
@@ -32,49 +49,153 @@ def analysis(analysis_type):
                 x=study_area_lon,
                 y=study_area_lat,
                 time=time_range,
-                measurements=['red', 'green', 'blue', 'nir'],
-                output_crs='EPSG:4326',
-                resolution=(-0.00027, 0.00027)
+                measurements=['B04_10m', 'B03_10m', 'B02_10m', 'B08_10m'],
+                output_crs='EPSG:6933',
+                resolution=(-30, 30)
             )
 
+            min = str(ds.time.min().values.astype('datetime64[s]'))
+            max = str(ds.time.max().values.astype('datetime64[s]'))
+
             if analysis_type=="ndvi":
-                res = (ds.nir - ds.red) / (ds.nir + ds.red)
+                res = (ds.B08_10m - ds.B04_10m) / (ds.B08_10m + ds.B04_10m)
             elif analysis_type=="ndwi":
-                res = (ds.green - ds.nir) / (ds.green + ds.nir)
+                res = (ds.B03_10m - ds.B08_10m) / (ds.B03_10m + ds.B08_10m)
+            elif analysis_type=="forest":
+                ndvi = (ds.B08_10m - ds.B04_10m) / (ds.B08_10m + ds.B04_10m)
+                evi = 2.5 * ((ds.B08_10m - ds.B04_10m) / (ds.B08_10m + 6 * ds.B04_10m - 7.5 * ds.B02_10m + 1))
+
+                # Create forest masks based on NDVI and EVI thresholds
+                dense_forest_mask = np.where((ndvi > 0.6) & (ndvi < 0.8) & (evi > 0.4), 1, 0)
+                open_forest_mask = np.where((ndvi > 0.3) & (ndvi < 0.6) & (evi > 0.2) & (evi < 0.4), 1, 0)
+                sparse_forest_mask = np.where((ndvi > 0.1) & (ndvi < 0.3) & (evi < 0.2), 1, 0)
+
+                print("Thresholds applied")
+
+                # Calculate the area of each pixel
+                pixel_area = abs(ds.geobox.affine[0] * ds.geobox.affine[4])
+                print('pixel_area', pixel_area)
+
+                data = [['day', 'month', 'year', 'dense_forest', 'open_forest', 'sparse_forest', 'forest', 'total']]
+
+                for i in range(dense_forest_mask.shape[0]):
+                    data_time = str(ndvi.time[i].values).split("T")[0]
+                    new_data_time = data_time.split("-")
+                    print(dense_forest_mask)
+                    # Calculate the forest cover area for each forest type
+                    dense_forest_cover_area = np.sum(dense_forest_mask[i]) * pixel_area
+                    open_forest_cover_area = np.sum(open_forest_mask[i]) * pixel_area
+                    sparse_forest_cover_area = np.sum(sparse_forest_mask[i]) * pixel_area
+
+                    print('areas', dense_forest_cover_area, open_forest_cover_area, sparse_forest_cover_area)
+
+                    # Calculate the total forest cover area
+                    total_forest_cover_area = dense_forest_cover_area + open_forest_cover_area + sparse_forest_cover_area
+
+                    original_array = np.where(ndvi > -10, 1, 0)
+                    original = np.sum(original_array[i]) * pixel_area
+                    
+                    print("1 data added")
+
+                    data.append([new_data_time[2], new_data_time[1], new_data_time[0],
+                                dense_forest_cover_area, open_forest_cover_area,
+                                sparse_forest_cover_area, total_forest_cover_area, original])
+                    
+                df = pd.DataFrame(data[1:], columns=data[0])
+                df["year-month"] = df["year"].astype('str') + "-" + df["month"].astype('str')
+
+                X = df[["year", "month"]]
+                y = df["dense_forest"]
+                y2 = df["open_forest"]
+                y3 = df["sparse_forest"]
+
+                rf_regressor = RandomForestRegressor(n_estimators=100, random_state=101)
+                rf_regressor.fit(X, y)
+                y_pred = rf_regressor.predict([[2024, 5]])
+                print(df, y_pred)
+                rf_regressor2 = RandomForestRegressor(n_estimators=100, random_state=101)
+                rf_regressor2.fit(X, y2)
+                y_pred2 = rf_regressor2.predict([[2024, 5]])
+                print(df, y_pred2)
+                rf_regressor3 = RandomForestRegressor(n_estimators=100, random_state=101)
+                rf_regressor3.fit(X, y3)
+                y_pred3 = rf_regressor3.predict([[2024, 5]])
+                print(df, y_pred3)
+
+                df["year-month"] = df["year"].astype('str') + "-" + df["month"].astype('str')
+                X["year-month"] = X["year"].astype('str') + "-" + X["month"].astype('str')
+
+                print("year-month done")
+
+                plot_data = [
+                    go.Scatter(
+                        x = df['year-month'],
+                        y = df['dense_forest']/1000000,
+                        name = "Dense Actual"
+                    ),
+                    go.Scatter(
+                        x = ['2024-05'],
+                        y = y_pred/1000000,
+                        name = "Dense Predicted"
+                    ),
+                    go.Scatter(
+                        x = df['year-month'],
+                        y = df['open_forest']/1000000,
+                        name = "Open Actual"
+                    ),
+                    go.Scatter(
+                        x = ['2024-05'],
+                        y = y_pred2/1000000,
+                        name = "Open Predicted"
+                    ),
+                    go.Scatter(
+                        x = df['year-month'],
+                        y = df['sparse_forest']/1000000,
+                        name = "Sparse Actual"
+                    ),
+                    go.Scatter(
+                        x = ['2024-05'],
+                        y = y_pred3/1000000,
+                        name = "Sparse Predicted"
+                    ),
+                ]
+
+                print("Plot plotted")
+
+                plot_layout = go.Layout(
+                    title='Dense Forest Cover'
+                )
+                fig = go.Figure(data=plot_data, layout=plot_layout)
+
+                # Convert plot to JSON
+                plot_json = pio.to_json(fig)
+
+                return jsonify({"plot": plot_json})
             else:
                 return jsonify({"error": "Invalid type"})
 
-            res_start = res.sel(time=time_range[0][:4]).mean(dim='time')
-            res_end = res.sel(time=time_range[1][:4]).mean(dim='time')
+            res_start = res.sel(time=slice(time_range[0], time_range[1])).min(dim='time')
+            res_end = res.sel(time=slice(time_range[0], time_range[1])).max(dim='time')
             res_diff = res_end - res_start
 
             if analysis_type=="ndvi":
                 title = 'Vegetation'
-                cmap = 'RdYlBu'
+                cmap = 'YlGn_r'
             elif analysis_type=="ndwi":
                 title = 'Water'
-                cmap = 'RdBu'
+                cmap = 'cividis'
 
-            plt.figure(figsize=(10, 6))
-            gs = gridspec.GridSpec(2, 2)
+            plt.figure(figsize=(10, 4))
+            
+            res.plot(col='time', vmin=0, vmax=1, col_wrap=3, cmap=cmap)
+            plt.title(title+' '+min.split('T')[0])
 
-            plt.subplot(gs[0, 0])
-            plt.imshow(res_start, cmap=cmap, vmin=-1, vmax=1)
-            plt.title(title+' '+data['fromdate'][:4])
-
-            plt.subplot(gs[0, 1])
-            plt.imshow(res_end, cmap=cmap, vmin=-1, vmax=1)
-            plt.title(title+' '+data['todate'][:4])
-
-            plt.subplot(gs[1, :])
-            plt.imshow(res_diff, cmap=cmap, vmin=-1, vmax=1)
-            plt.title(title+' Change')
-
-            plt.colorbar(shrink=0.5)
 
             now = datetime.now()
             timestamp = now.strftime("%d/%m/%Y at %I:%M:%S %p")
             plt.xlabel(timestamp)
+
+            plt.subplots_adjust(top=1, bottom=0, left=0, right=1, hspace=0)
             
             img = io.BytesIO()
             plt.savefig(img, format='png')
@@ -87,5 +208,29 @@ def analysis(analysis_type):
             return jsonify({"error": e})
     return jsonify({"error": "Invalid method: "+request.method})
 
+
+@app.route('/datasets', methods=['GET'])
+def datasets():
+    dc = datacube.Datacube()
+
+    product = 's2a_sen2cor_granule'
+
+    # Get the available datasets for the specified product
+    datasets = dc.find_datasets(product=product)
+
+    # Initialize an empty list to store the coordinates
+    coordinates = []
+
+    # Iterate over the datasets and extract the coordinates
+    for dataset in datasets:
+        bounds = dataset.bounds
+        coordinates.append([[bounds.left, bounds.bottom], [bounds.right, bounds.top]])
+
+    # Print the coordinates
+    for coord in coordinates:
+        print(coord)
+    print(coordinates)
+    return jsonify({'coordinates': coordinates})
+    
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
