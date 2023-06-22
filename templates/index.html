@@ -22,7 +22,7 @@
                     <!-- <div class="gmap_canvas"><iframe width="600" height="500" id="gmap_canvas" src="https://maps.google.com/maps?q=15.733048,80.945512&t=&z=13&ie=UTF8&iwloc=&output=embed" frameborder="0" scrolling="no" marginheight="0" marginwidth="0"></iframe></div> -->
                 </div>
             </div>
-            <div class="col-md-5 my-2 my-md-0">
+            <div class="col-lg-5 my-3 my-lg-0">
                 <form onsubmit="submitValue(event)">
                     <div class="mb-3 row">
                         <div class="mb-3 col-md-6">
@@ -40,7 +40,7 @@
                             <option selected>-- Select --</option>
                             <option value="ndvi">NDVI</option>
                             <option value="ndwi">NDWI</option>
-                            <option value="forest">ML Forest</option>
+                            <option value="forest">Random Forest Analysis</option>
                         </select>
                     </div>
                     <button class="btn btn-primary me-2" id="submitBtn" type="submit">Submit</button>
@@ -89,7 +89,7 @@
         integrity="sha384-Y4oOpwW3duJdCWv5ly8SCFYWqFDsfob/3GkgExXKV4idmbt98QcxXYs9UoXAB7BZ"
         crossorigin="anonymous"></script>
 
-    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js" charset="utf-8"></script>
+    <script src="/static/plotly-2.24.1.min.js" charset="utf-8"></script>
 
     <script type="text/javascript">
         var map;
@@ -246,11 +246,11 @@
                     }
                     res.innerHTML = `<div class="card my-2 shadow">
                     <div class="card-body">
-                        <div class="d-flex justify-content-center">
+                        <div class="justify-content-center align-items-center" style="display: flex;">
                             <svg width="20" height="20" style="margin-right: 10px;">
                                 <rect width="20" height="20" style="fill: ${area_colors[i]}; stroke: ${area_colors[i]}; stroke-width: 5; fill-opacity: 0.2;"></rect>
                             </svg>
-                            <h5 class="card-title">Analysis ${i + 1}</h5>
+                            <h5 class="card-title mb-0">${data.type?.toUpperCase()} - ${data.area_name}</h5>
                         </div>
                         <img class="card-img-top res_img" src="data:image/png;base64, ${data.plot_url}" alt="graph">
                     </div>

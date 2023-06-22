@@ -23,6 +23,21 @@ import warnings
 matplotlib.use('Agg')
 warnings.filterwarnings("ignore")
 
+from geopy.geocoders import Nominatim
+
+def get_area_name(latitude, longitude):
+    geolocator = Nominatim(user_agent='my-app')  # Initialize the geocoder
+    location = geolocator.reverse((latitude, longitude))  # Reverse geocode the coordinates
+    if location is not None:
+        address_components = location.raw['address']
+        city_name = address_components.get('city', '')
+        if not city_name:
+            city_name = address_components.get('town', '')
+        if not city_name:
+            city_name = address_components.get('village', '')
+        return city_name
+    else:
+        return "City name not found"
 
 dc = datacube.Datacube(app="Flask_Text")
 
@@ -53,9 +68,6 @@ def analysis(analysis_type):
                 output_crs='EPSG:6933',
                 resolution=(-30, 30)
             )
-
-            min = str(ds.time.min().values.astype('datetime64[s]'))
-            max = str(ds.time.max().values.astype('datetime64[s]'))
 
             if analysis_type=="ndvi":
                 res = (ds.B08_10m - ds.B04_10m) / (ds.B08_10m + ds.B04_10m)
@@ -170,7 +182,10 @@ def analysis(analysis_type):
                 # Convert plot to JSON
                 plot_json = pio.to_json(fig)
 
-                return jsonify({"plot": plot_json})
+                area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
+                print(area_name)
+
+                return jsonify({"plot": plot_json, "type": "Random Forest Analysis", "area_name": area_name})
             else:
                 return jsonify({"error": "Invalid type"})
 
@@ -187,15 +202,13 @@ def analysis(analysis_type):
 
             plt.figure(figsize=(10, 4))
             
-            res.plot(col='time', vmin=0, vmax=1, col_wrap=3, cmap=cmap)
-            plt.title(title+' '+min.split('T')[0])
-
+            plot = res.plot(col='time', vmin=0, vmax=1, col_wrap=3, cmap=cmap)
+            for ax, time in zip(plot.axes.flat, res.time.values):
+                ax.set_title(str(time).split('T')[0])
 
             now = datetime.now()
             timestamp = now.strftime("%d/%m/%Y at %I:%M:%S %p")
             plt.xlabel(timestamp)
-
-            plt.subplots_adjust(top=1, bottom=0, left=0, right=1, hspace=0)
             
             img = io.BytesIO()
             plt.savefig(img, format='png')
@@ -203,7 +216,10 @@ def analysis(analysis_type):
             plot_data = urllib.parse.quote(base64.b64encode(img.read()).decode())
             plt.clf()
             
-            return jsonify({"plot_url": plot_data,  "data": str(dict(request.form)), "coordinates": coordinates})
+            area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
+            print(area_name)
+
+            return jsonify({"plot_url": plot_data,  "data": str(dict(request.form)), "coordinates": coordinates, "type": analysis_type, "area_name": area_name})
         except Exception as e:
             return jsonify({"error": e})
     return jsonify({"error": "Invalid method: "+request.method})
