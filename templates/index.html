@@ -61,7 +61,7 @@
                 style="border: 1px solid grey; max-height: 800px; overflow-y: auto;"></div>
             <div class="col-lg-6">
                 <canvas id="myChart"></canvas>
-                <div style="height: 400px;"></div>
+                <div id="myTableDiv" style="height: 400px; overflow: auto;"></div>
             </div>
         </div>
     </div>
@@ -110,6 +110,7 @@
         let res = document.getElementById("res")
         let loading = document.getElementById("loading")
         let submitBtn = document.getElementById("submitBtn")
+        let myTableDiv = document.getElementById("myTableDiv")
         loading.style.display = 'none'
         let chart = null;
 
@@ -305,6 +306,20 @@
                                 }
                             }
                         });
+                        myTableDiv.innerHTML = `
+                            <h4 class="my-3">Indexes List</h4>
+                            <table class="table table-bordered table-hover my-3">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Places</th>
+                                        ${data.labels.map(date => `<th scope="col">${date}</th>`).join('')}
+                                    </tr>
+                                </thead>
+                                <tbody id="myTableTbody">
+                                    
+                                </tbody>
+                            </table>
+                        `
                     }
                     chart.data.datasets.push({
                         label: data.area_name,
@@ -313,6 +328,12 @@
                         borderColor: area_colors[i],
                         tension: 0.1
                     })
+                    document.getElementById('myTableTbody').innerHTML += `
+                        <tr>
+                            <td scope="row">${data.area_name}</td>
+                            ${data.mean_res_rounded.map(mean => `<td>${mean}</td>`).join('')}
+                        </tr>
+                    `
                     console.log(data.mean_res_rounded, chart)
                     fetched.push(coord)
                     chart.update()

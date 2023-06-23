@@ -215,8 +215,13 @@ def analysis(analysis_type):
             plot_data = urllib.parse.quote(base64.b64encode(img.read()).decode())
             plt.clf()
             
-            area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
-            print(area_name)
+            try:
+                area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
+                if area_name=="":
+                    area_name = "Unknown"
+                print(area_name)
+            except:
+                area_name = "Unknown"
 
             return jsonify({"plot_url": plot_data,  "data": str(dict(request.form)), "coordinates": coordinates, "type": analysis_type, "area_name": area_name, "mean_res_rounded": mean_res_rounded, "labels": labels})
         except Exception as e:
