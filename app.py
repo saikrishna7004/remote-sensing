@@ -5,6 +5,7 @@ import io, urllib, base64
 import datacube
 from datacube.utils.geometry import CRS
 from pyproj import Transformer
+import odc.algo
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -68,6 +69,7 @@ def analysis(analysis_type):
                 output_crs='EPSG:6933',
                 resolution=(-30, 30)
             )
+            ds = odc.algo.to_f32(ds)
 
             if analysis_type=="ndvi":
                 res = (ds.B08_10m - ds.B04_10m) / (ds.B08_10m + ds.B04_10m)
@@ -189,20 +191,17 @@ def analysis(analysis_type):
             else:
                 return jsonify({"error": "Invalid type"})
 
-            res_start = res.sel(time=slice(time_range[0], time_range[1])).min(dim='time')
-            res_end = res.sel(time=slice(time_range[0], time_range[1])).max(dim='time')
-            res_diff = res_end - res_start
-
             if analysis_type=="ndvi":
-                title = 'Vegetation'
                 cmap = 'YlGn_r'
             elif analysis_type=="ndwi":
-                title = 'Water'
                 cmap = 'cividis'
 
-            plt.figure(figsize=(10, 4))
-            
-            plot = res.plot(col='time', vmin=0, vmax=1, col_wrap=3, cmap=cmap)
+            sub_res = res.isel(time=[0, -1])
+            mean_res = res.mean(dim=['x', 'y'], skipna=True)
+            mean_res_rounded = list(map(lambda x: round(x, 4), mean_res.values.tolist()))
+            labels = list(map(lambda x: x.split('T')[0], [i for i in np.datetime_as_string(res.time.values).tolist()])) 
+
+            plot = sub_res.plot(col='time', col_wrap=2)
             for ax, time in zip(plot.axes.flat, res.time.values):
                 ax.set_title(str(time).split('T')[0])
 
@@ -219,7 +218,7 @@ def analysis(analysis_type):
             area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
             print(area_name)
 
-            return jsonify({"plot_url": plot_data,  "data": str(dict(request.form)), "coordinates": coordinates, "type": analysis_type, "area_name": area_name})
+            return jsonify({"plot_url": plot_data,  "data": str(dict(request.form)), "coordinates": coordinates, "type": analysis_type, "area_name": area_name, "mean_res_rounded": mean_res_rounded, "labels": labels})
         except Exception as e:
             return jsonify({"error": e})
     return jsonify({"error": "Invalid method: "+request.method})

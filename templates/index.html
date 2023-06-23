@@ -13,9 +13,9 @@
 </head>
 
 <body>
+    <h3 class="mb-3 py-3" style="text-align: center; background-color: aquamarine;">Remote Sensing using Data Cube
+    </h3>
     <div class="container">
-        <h3 class="my-3 py-3" style="text-align: center; background-color: aquamarine;">Remote Sensing using Data Cube
-        </h3>
         <div class="my-5 row">
             <div class="col-lg-7">
                 <div class="mapouter" style="position: unset;" id="map">
@@ -56,7 +56,14 @@
             <div class="spinner-border" role="status"><span class="sr-only"></span></div>
             <div class="mx-3">Loading... Please wait...</div>
         </div>
-        <div class="p-4 mb-4" id="res" style="border: 1px solid grey; max-height: 600px; overflow-y: auto;"></div>
+        <div class="row">
+            <div class="col-lg-6 p-4 mb-4" id="res"
+                style="border: 1px solid grey; max-height: 800px; overflow-y: auto;"></div>
+            <div class="col-lg-6">
+                <canvas id="myChart"></canvas>
+                <div style="height: 400px;"></div>
+            </div>
+        </div>
     </div>
 
     <div class="container">
@@ -90,6 +97,7 @@
         crossorigin="anonymous"></script>
 
     <script src="/static/plotly-2.24.1.min.js" charset="utf-8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script type="text/javascript">
         var map;
@@ -98,18 +106,55 @@
         var coordinates = [];
         var fetched = [];
         var area_colors = [];
+        var plot_data = [];
         let res = document.getElementById("res")
         let loading = document.getElementById("loading")
         let submitBtn = document.getElementById("submitBtn")
         loading.style.display = 'none'
+        let chart = null;
 
         function getRandomColor() {
-            var letters = "0123456789ABCDEF";
-            var color = "#";
-            for (var i = 0; i < 6; i++) {
-                color += letters[Math.floor(Math.random() * 16)];
-            }
-            return color;
+            const goldenRatio = (1 + Math.sqrt(5)) / 2;
+            const hue = (Math.random() + goldenRatio) % 1; // Generate a random hue value
+
+            // Set saturation and lightness to fixed values to maintain consistent color brightness
+            const saturation = 0.7;
+            const lightness = 0.5;
+
+            // Convert HSL values to RGB
+            const hslToRgb = (h, s, l) => {
+                const c = (1 - Math.abs(2 * l - 1)) * s;
+                const x = c * (1 - Math.abs((h * 6) % 2 - 1));
+                const m = l - c / 2;
+
+                let r, g, b;
+                if (h < 1 / 6) {
+                    [r, g, b] = [c, x, 0];
+                } else if (h < 2 / 6) {
+                    [r, g, b] = [x, c, 0];
+                } else if (h < 3 / 6) {
+                    [r, g, b] = [0, c, x];
+                } else if (h < 4 / 6) {
+                    [r, g, b] = [0, x, c];
+                } else if (h < 5 / 6) {
+                    [r, g, b] = [x, 0, c];
+                } else {
+                    [r, g, b] = [c, 0, x];
+                }
+
+                return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+            };
+
+            // Convert RGB values to hexadecimal color code
+            const rgbToHex = (r, g, b) => {
+                return `#${[r, g, b].map((x) => Math.round(x).toString(16).padStart(2, '0')).join('')}`;
+            };
+
+            // Convert HSL to RGB and then to hexadecimal color code
+            const [r, g, b] = hslToRgb(hue, saturation, lightness);
+            const hexColor = rgbToHex(r, g, b);
+
+            return hexColor;
         }
 
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -145,7 +190,7 @@
                 var boundingBox = L.rectangle(bounds, { color: 'red', weight: 2, fill: false });
                 boundingBox.addTo(map);
             }
-        }).catch(error=>console.log(error))
+        }).catch(error => console.log(error))
 
         map.on(L.Draw.Event.CREATED, function (event) {
             var layer = event.layer;
@@ -239,8 +284,38 @@
 
                     })
                     const data = await result.json()
-                    console.log(data)
+                    console.log(data, data.labels)
+                    if (fetched.length == 0) {
+                        console.log("object")
+                        chart = new Chart(document.getElementById('myChart'), {
+                            type: 'line',
+                            data: {
+                                labels: data.labels,
+                                datasets: []
+                            },
+                            options: {
+                                responsive: true,
+                                scales: {
+                                    x: {
+                                        display: true
+                                    },
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
+                    }
+                    chart.data.datasets.push({
+                        label: data.area_name,
+                        data: data.mean_res_rounded,
+                        fill: false,
+                        borderColor: area_colors[i],
+                        tension: 0.1
+                    })
+                    console.log(data.mean_res_rounded, chart)
                     fetched.push(coord)
+                    chart.update()
                     if (data.error) {
                         return Swal.fire('Not Found', 'Data not found in selected region', 'error')
                     }
