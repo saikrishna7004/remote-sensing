@@ -67,7 +67,12 @@
     </div>
 
     <div class="container">
-        <div id="plot-container"></div>
+        <div class="row">
+            <div class="col-lg-6">
+                <div id="plot-container"></div>
+            </div>
+            <div class="col-lg-6"><canvas id="forestCoverPlot"></canvas></div>
+        </div>
     </div>
 
     <style type="text/css">
@@ -113,6 +118,8 @@
         let myTableDiv = document.getElementById("myTableDiv")
         loading.style.display = 'none'
         let chart = null;
+        let forestCoverPlotChart = null;
+        let isForestPlotted = false
 
         function getRandomColor() {
             const goldenRatio = (1 + Math.sqrt(5)) / 2;
@@ -250,8 +257,40 @@
                     const data = await result.json()
                     console.log(data)
                     const plotData = await JSON.parse(data.plot);
+                    const forestCoverPlotJson = data.forestCoverPlot;
                     console.log(plotData)
                     Plotly.newPlot('plot-container', plotData);
+                    if (!isForestPlotted) {
+                        forestCoverPlotChart = new Chart(document.getElementById('forestCoverPlot'), {
+                            type: 'line',
+                            data: {
+                                labels: data.labels,
+                                datasets: []
+                            },
+                            options: {
+                                responsive: true,
+                                scales: {
+                                    x: {
+                                        display: true
+                                    },
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
+                        isForestPlotted = true
+                    }
+                    forestCoverPlotChart.data.datasets.push({
+                        label: data.area_name,
+                        data: data.forestCoverPlot,
+                        fill: false,
+                        borderColor: area_colors[area_colors.length-1],
+                        tension: 0.1
+                    })
+                    console.log(data.forestCoverPlot, forestCoverPlotChart.data.datasets)
+                    forestCoverPlotChart.update()
+
                 } catch (error) {
                     console.log(error)
                     Swal.fire('Error', 'An error occured, please try again', 'error')
@@ -289,6 +328,24 @@
                     if (fetched.length == 0) {
                         console.log("object")
                         chart = new Chart(document.getElementById('myChart'), {
+                            type: 'line',
+                            data: {
+                                labels: data.labels,
+                                datasets: []
+                            },
+                            options: {
+                                responsive: true,
+                                scales: {
+                                    x: {
+                                        display: true
+                                    },
+                                    y: {
+                                        beginAtZero: true
+                                    }
+                                }
+                            }
+                        });
+                        forestCoverPlotChart = new Chart(document.getElementById('forestCoverPlot'), {
                             type: 'line',
                             data: {
                                 labels: data.labels,

@@ -187,7 +187,7 @@ def analysis(analysis_type):
                 area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
                 print(area_name)
 
-                return jsonify({"plot": plot_json, "type": "Random Forest Analysis", "area_name": area_name})
+                return jsonify({"plot": plot_json, "type": "Random Forest Analysis", "area_name": area_name, "forestCoverPlot": (df['forest']/1000000).tolist(), "labels": df['year-month'].to_list()})
             else:
                 return jsonify({"error": "Invalid type"})
 
@@ -217,7 +217,7 @@ def analysis(analysis_type):
             
             try:
                 area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
-                if area_name=="":
+                if area_name=="" or type(area_name)!=str:
                     area_name = "Unknown"
                 print(area_name)
             except:
