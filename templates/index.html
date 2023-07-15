@@ -35,15 +35,25 @@
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label for="buffer" class="form-label">Analysis Type</label>
+                        <label for="type" class="form-label">Analysis Type</label>
                         <select class="form-select" aria-label="Type of Analysis" id="type" name="type">
                             <option selected>-- Select --</option>
                             <option value="ndvi">NDVI</option>
                             <option value="ndwi">NDWI</option>
+                            <option value="evi">EVI</option>
                             <option value="forest">Random Forest Analysis</option>
+                            <option value="rainfall">Forest vs Rainfall</option>
                         </select>
                     </div>
-                    <button class="btn btn-primary me-2" id="submitBtn" type="submit">Submit</button>
+                    <div class="mb-3" id="districtDiv" style="display: none;">
+                        <label for="distName" class="form-label">District Name</label>
+                        <select class="form-select" aria-label="distName" id="distName" name="distName">
+                            <option selected>-- Select --</option>
+                            <option value="Adilabad Rural">Adilabad Rural</option>
+                            <option value="Gadiguda">Gadiguda</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary my-3 me-2" id="submitBtn" type="submit">Submit</button>
                     <button class="btn btn-primary" onclick="clearAll(event)">Clear All</button>
                 </form>
             </div>
@@ -56,23 +66,22 @@
             <div class="spinner-border" role="status"><span class="sr-only"></span></div>
             <div class="mx-3">Loading... Please wait...</div>
         </div>
-        <div class="row">
+        <div class="row" id="outputDiv" style="display: none;">
             <div class="col-lg-6 p-4 mb-4" id="res"
                 style="border: 1px solid grey; max-height: 800px; overflow-y: auto;"></div>
             <div class="col-lg-6">
                 <canvas id="myChart"></canvas>
-                <div id="myTableDiv" style="height: 400px; overflow: auto;"></div>
+                <div id="myTableDiv" style="max-height: 400px; overflow: auto;"></div>
             </div>
         </div>
     </div>
 
-    <div class="container">
-        <div class="row">
-            <div class="col-lg-6">
-                <div id="plot-container"></div>
-            </div>
-            <div class="col-lg-6"><canvas id="forestCoverPlot"></canvas></div>
-        </div>
+    <div class="container" id="randomForest" style="display: none; height: 800px; overflow-y: auto; border: 1px solid grey;">
+        <div id="plot-container"></div>
+    </div>
+
+    <div class="container" id="rainfallDiv" style="display: none;">
+        <div id="plot-container-rainfall"></div>
     </div>
 
     <style type="text/css">
@@ -83,6 +92,45 @@
 
         .res_img {
             width: 100%;
+        }
+
+        .image-container {
+            position: relative;
+            display: inline-block;
+            overflow: hidden;
+        }
+
+        .image-container img {
+            display: block;
+            width: 100%;
+            height: auto;
+            transition: transform 0.3s ease;
+        }
+
+        .image-container:hover img {
+            transform: scale(1.05);
+            filter: drop-shadow(0 0 8px rgba(0, 0, 0, 0.5));
+        }
+
+        .zoom-button {
+            position: absolute;
+            bottom: 0px;
+            right: 0px;
+            height: 100%;
+            width: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            align-items: center;
+            display: flex;
+            justify-content: center;
+        }
+
+        .image-container:hover .zoom-button {
+            opacity: 1;
         }
     </style>
 
@@ -107,7 +155,7 @@
     <script type="text/javascript">
         var map;
         var marker;
-        var map = L.map('map').setView([15.733048, 80.945512], 9);
+        var map = L.map('map').setView([19.67, 78.53], 11);
         var coordinates = [];
         var fetched = [];
         var area_colors = [];
@@ -118,8 +166,28 @@
         let myTableDiv = document.getElementById("myTableDiv")
         loading.style.display = 'none'
         let chart = null;
-        let forestCoverPlotChart = null;
-        let isForestPlotted = false
+        let randomForest = document.getElementById('randomForest')
+        let rainfallDiv = document.getElementById('rainfallDiv')
+        let outputDiv = document.getElementById('outputDiv')
+
+        function updateListners() {
+            // Add event listener to the zoom button
+            document.querySelectorAll('.image-container').forEach(function(container) {
+                var image = container.querySelector('img');
+
+                // Open the zoom overlay on click
+                container.addEventListener('click', function() {
+                    Swal.fire({
+                        imageUrl: image.src,
+                        imageAlt: 'Image',
+                        imageWidth: 700,
+                        width: 900,
+                        showCloseButton: true,
+                        showConfirmButton: false,
+                    })
+                });
+            });
+        }
 
         function getRandomColor() {
             const goldenRatio = (1 + Math.sqrt(5)) / 2;
@@ -231,7 +299,9 @@
             submitBtn.innerText = 'Loading...'
             submitBtn.setAttribute("disabled", "")
 
-            if (!drawnItems.getLayers().length) {
+            let typeVal = document.getElementById('type').value
+
+            if (typeVal != "rainfall" && !drawnItems.getLayers().length) {
                 submitBtn.innerText = 'Submit'
                 submitBtn.removeAttribute("disabled")
                 return Swal.fire('Area Selection Empty', 'No areas selected. Please select an area and submit to see analysis', 'error')
@@ -240,57 +310,84 @@
             console.log(coordinates)
             loading.style.display = 'flex'
 
-            if (document.getElementById('type').value == 'forest') {
+            if (typeVal == 'forest') {
                 try {
-                    const result = await fetch("/type/forest", {
+                    let result = await fetch("/type/forest", {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify({
-                            coordinates: coordinates[0],
+                            coordinates: coordinates[coordinates.length - 1],
                             fromdate: document.getElementById("fromdate").value,
                             todate: document.getElementById("todate").value
+                        })
+
+                    })
+                    let data = await result.json()
+                    console.log(data)
+                    let plotData = await JSON.parse(data.plot);
+                    console.log(plotData)
+                    randomForest.style.display = "block"
+                    let ele = document.createElement('div')
+                    ele.innerHTML = `<div class="card my-2 shadow">
+                        <div class="card-body">
+                            <div class="justify-content-center align-items-center mb-2" style="display: flex;">
+                                <svg width="20" height="20" style="margin-right: 10px;">
+                                    <rect width="20" height="20" style="fill: ${area_colors[area_colors.length - 1]}; stroke: ${area_colors[area_colors.length - 1]}; stroke-width: 5; fill-opacity: 0.2;"></rect>
+                                </svg>
+                                <h5 class="card-title mb-0">${data.type?.toUpperCase()} - ${data.area_name}</h5>
+                            </div>
+                        </div>
+                    </div>`
+                    let plotId = 'plotDiv' + Date.now();
+                    ele.id = plotId;
+                    let parentDiv = document.getElementById('plot-container')
+                    if (parentDiv.firstChild) {
+                        parentDiv.insertBefore(plotDiv, parentDiv.firstChild);
+                    } else {
+                        parentDiv.appendChild(plotDiv);
+                    }
+                    Plotly.newPlot(plotId, plotData);
+                } catch (error) {
+                    console.log(error)
+                    Swal.fire('Error', 'An error occured, please try again', 'error')
+                }
+                loading.style.display = 'none'
+                submitBtn.innerText = 'Submit'
+                submitBtn.removeAttribute("disabled")
+                return
+            }
+
+            else if (typeVal == 'rainfall') {
+                try {
+                    const result = await fetch("/type/rainfall", {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            fromdate: document.getElementById("fromdate").value,
+                            todate: document.getElementById("todate").value,
+                            distName: document.getElementById("distName").value
                         })
 
                     })
                     const data = await result.json()
                     console.log(data)
                     const plotData = await JSON.parse(data.plot);
-                    const forestCoverPlotJson = data.forestCoverPlot;
                     console.log(plotData)
-                    Plotly.newPlot('plot-container', plotData);
-                    if (!isForestPlotted) {
-                        forestCoverPlotChart = new Chart(document.getElementById('forestCoverPlot'), {
-                            type: 'line',
-                            data: {
-                                labels: data.labels,
-                                datasets: []
-                            },
-                            options: {
-                                responsive: true,
-                                scales: {
-                                    x: {
-                                        display: true
-                                    },
-                                    y: {
-                                        beginAtZero: true
-                                    }
-                                }
-                            }
-                        });
-                        isForestPlotted = true
+                    rainfallDiv.style.display = "block"
+                    let ele = document.createElement('div')
+                    let plotId = 'plotDiv' + Date.now();
+                    ele.id = plotId;
+                    let parentDiv = document.getElementById('plot-container-rainfall')
+                    if (parentDiv.firstChild) {
+                        parentDiv.insertBefore(plotDiv, parentDiv.firstChild);
+                    } else {
+                        parentDiv.appendChild(plotDiv);
                     }
-                    forestCoverPlotChart.data.datasets.push({
-                        label: data.area_name,
-                        data: data.forestCoverPlot,
-                        fill: false,
-                        borderColor: area_colors[area_colors.length-1],
-                        tension: 0.1
-                    })
-                    console.log(data.forestCoverPlot, forestCoverPlotChart.data.datasets)
-                    forestCoverPlotChart.update()
-
+                    Plotly.newPlot(plotId, plotData);
                 } catch (error) {
                     console.log(error)
                     Swal.fire('Error', 'An error occured, please try again', 'error')
@@ -323,8 +420,13 @@
                         body: JSON.stringify(bodyData)
 
                     })
-                    const data = await result.json()
-                    console.log(data, data.labels)
+                    console.log(result)
+                    let data = await result.text()
+                    //data = await data.replaceAll('NaN', '0')
+                    console.log(data)
+                    data = await JSON.parse(data)
+                    //const data1 = await result.json()
+                    console.log('test', data)
                     if (fetched.length == 0) {
                         console.log("object")
                         chart = new Chart(document.getElementById('myChart'), {
@@ -337,28 +439,18 @@
                                 responsive: true,
                                 scales: {
                                     x: {
-                                        display: true
+                                        display: true,
+                                        title: {
+                                            display: true,
+                                            text: 'Year-Month'
+                                        }
                                     },
                                     y: {
-                                        beginAtZero: true
-                                    }
-                                }
-                            }
-                        });
-                        forestCoverPlotChart = new Chart(document.getElementById('forestCoverPlot'), {
-                            type: 'line',
-                            data: {
-                                labels: data.labels,
-                                datasets: []
-                            },
-                            options: {
-                                responsive: true,
-                                scales: {
-                                    x: {
-                                        display: true
-                                    },
-                                    y: {
-                                        beginAtZero: true
+                                        beginAtZero: true,
+                                        title: {
+                                            display: true,
+                                            text: data.type
+                                        }
                                     }
                                 }
                             }
@@ -369,6 +461,7 @@
                                 <thead>
                                     <tr>
                                         <th scope="col">Places</th>
+                                        <th scope="col">Type</th>
                                         ${data.labels.map(date => `<th scope="col">${date}</th>`).join('')}
                                     </tr>
                                 </thead>
@@ -387,27 +480,42 @@
                     })
                     document.getElementById('myTableTbody').innerHTML += `
                         <tr>
-                            <td scope="row">${data.area_name}</td>
+                            <td scope="row" style="color: white; background: ${area_colors[i]};">${data.area_name}</td>
+                            <td scope="row">${data.type}</td>
                             ${data.mean_res_rounded.map(mean => `<td>${mean}</td>`).join('')}
                         </tr>
                     `
                     console.log(data.mean_res_rounded, chart)
                     fetched.push(coord)
                     chart.update()
+                    outputDiv.style.display = "flex"
                     if (data.error) {
                         return Swal.fire('Not Found', 'Data not found in selected region', 'error')
                     }
                     res.innerHTML = `<div class="card my-2 shadow">
-                    <div class="card-body">
-                        <div class="justify-content-center align-items-center" style="display: flex;">
-                            <svg width="20" height="20" style="margin-right: 10px;">
-                                <rect width="20" height="20" style="fill: ${area_colors[i]}; stroke: ${area_colors[i]}; stroke-width: 5; fill-opacity: 0.2;"></rect>
-                            </svg>
-                            <h5 class="card-title mb-0">${data.type?.toUpperCase()} - ${data.area_name}</h5>
+                        <div class="card-body">
+                            <div class="justify-content-center align-items-center mb-2" style="display: flex;">
+                                <svg width="20" height="20" style="margin-right: 10px;">
+                                    <rect width="20" height="20" style="fill: ${area_colors[i]}; stroke: ${area_colors[i]}; stroke-width: 5; fill-opacity: 0.2;"></rect>
+                                </svg>
+                                <h5 class="card-title mb-0">${data.type?.toUpperCase()} - ${data.area_name}</h5>
+                            </div>
+                            <div class="image-container">
+                                <img class="card-img-top res_img" src="data:image/png;base64, ${data.plot_url}" alt="graph">
+                                <div class="zoom-button">
+                                    <svg width="40px" height="40px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:sketch="http://www.bohemiancoding.com/sketch/ns">
+                                        <g id="Page-1" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd" sketch:type="MSPage">
+                                            <g id="Icon-Set-Filled" sketch:type="MSLayerGroup" transform="translate(-154.000000, -985.000000)" fill="#ffffff">
+                                                <path d="M180,997 C180,997.553 179.552,998 179,998 C178.448,998 178,997.553 178,997 L178.022,994.435 L173.244,999.213 L171.83,997.799 L176.628,993 L174,993 C173.448,993 173,992.553 173,992 C173,991.448 173.448,991 174,991 L178.972,991 C179.251,991 179.502,991.115 179.684,991.301 C179.877,991.465 180,991.704 180,992 L180,997 L180,997 Z M180,1010 C180,1010.3 179.877,1010.54 179.684,1010.7 C179.503,1010.88 179.251,1011 178.972,1011 L174,1011 C173.448,1011 173,1010.55 173,1010 C173,1009.45 173.448,1009 174,1009 L176.628,1009 L171.83,1004.2 L173.244,1002.79 L178.022,1007.57 L178,1005 C178,1004.45 178.448,1004 179,1004 C179.552,1004 180,1004.45 180,1005 L180,1010 L180,1010 Z M166.756,999.213 L161.978,994.435 L162,997 C162,997.553 161.552,998 161,998 C160.448,998 160,997.553 160,997 L160,992 C160,991.704 160.123,991.465 160.316,991.301 C160.498,991.115 160.749,991 161.028,991 L166,991 C166.552,991 167,991.448 167,992 C167,992.553 166.552,993 166,993 L163.372,993 L168.17,997.799 L166.756,999.213 L166.756,999.213 Z M166,1009 C166.552,1009 167,1009.45 167,1010 C167,1010.55 166.552,1011 166,1011 L161.028,1011 C160.749,1011 160.497,1010.88 160.316,1010.7 C160.123,1010.54 160,1010.3 160,1010 L160,1005 C160,1004.45 160.448,1004 161,1004 C161.552,1004 162,1004.45 162,1005 L161.978,1007.57 L166.756,1002.79 L168.17,1004.2 L163.372,1009 L166,1009 L166,1009 Z M182,985 L158,985 C155.791,985 154,986.791 154,989 L154,1013 C154,1015.21 155.791,1017 158,1017 L182,1017 C184.209,1017 186,1015.21 186,1013 L186,989 C186,986.791 184.209,985 182,985 L182,985 Z" id="zoom" sketch:type="MSShapeGroup">
+                                                </path>
+                                            </g>
+                                        </g>
+                                    </svg>
+                                </div>
+                            </div>                          
                         </div>
-                        <img class="card-img-top res_img" src="data:image/png;base64, ${data.plot_url}" alt="graph">
-                    </div>
-                </div>` + res.innerHTML;
+                    </div>` + res.innerHTML;
+                    updateListners()
                 } catch (error) {
                     console.log(error)
                     Swal.fire('Error', 'An error occured, please try again', 'error')
@@ -426,7 +534,22 @@
             area_colors = []
             drawnItems.clearLayers();
             res.innerHTML = ``
+            plotContainer.innerHTML = ``
         }
+
+        let districtDiv = document.getElementById('districtDiv')
+        document.getElementById('type').addEventListener("change", function () {
+            console.log(document.getElementById('type').value)
+            if (document.getElementById('type').value == "rainfall") {
+                districtDiv.style.display = "unset"
+            }
+            else {
+                districtDiv.style.display = "none"
+            }
+        });
+        
+        updateListners()
+
     </script>
 </body>
 

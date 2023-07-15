@@ -1,7 +1,7 @@
 import json
 from flask import Flask, render_template, request, redirect, jsonify
 from datetime import datetime
-import io, urllib, base64
+import io, urllib, base64, xarray
 import datacube
 from datacube.utils.geometry import CRS
 from pyproj import Transformer
@@ -31,7 +31,9 @@ def get_area_name(latitude, longitude):
     location = geolocator.reverse((latitude, longitude))  # Reverse geocode the coordinates
     if location is not None:
         address_components = location.raw['address']
-        city_name = address_components.get('city', '')
+        city_name = address_components.get('mandal', '')
+        if not city_name:
+            city_name = address_components.get('city', '')
         if not city_name:
             city_name = address_components.get('town', '')
         if not city_name:
@@ -53,31 +55,40 @@ def analysis(analysis_type):
     if request.method=="POST":
         data = request.get_json()
         
-        coordinates = data['coordinates']
         time_range = (data['fromdate'], data['todate'])
-        study_area_lat = (coordinates[0][0], coordinates[1][0])
-        study_area_lon = (coordinates[1][1], coordinates[2][1])
 
         try:
-            dc = datacube.Datacube(app='water_change_analysis')
+            if analysis_type=="rainfall":
+                
+                dist_data = {
+                    'Adilabad Rural': {'min_lon': 78.5229, 'min_lat': 19.6545, 'max_lon': 78.5709, 'max_lat': 19.6982},
+                    'Gadiguda': {'min_lon': 78.7355476, 'min_lat': 19.317508, 'max_lon': 78.8155476, 'max_lat': 19.407508},
+                }
+                name = data['distName']
+                rectangle = dist_data[name]
 
-            ds = dc.load(product='s2a_sen2cor_granule',
-                x=study_area_lon,
-                y=study_area_lat,
-                time=time_range,
-                measurements=['B04_10m', 'B03_10m', 'B02_10m', 'B08_10m'],
-                output_crs='EPSG:6933',
-                resolution=(-30, 30)
-            )
-            ds = odc.algo.to_f32(ds)
+                data = pd.read_csv('pre_final.csv')
 
-            if analysis_type=="ndvi":
-                res = (ds.B08_10m - ds.B04_10m) / (ds.B08_10m + ds.B04_10m)
-            elif analysis_type=="ndwi":
-                res = (ds.B03_10m - ds.B08_10m) / (ds.B03_10m + ds.B08_10m)
-            elif analysis_type=="forest":
-                ndvi = (ds.B08_10m - ds.B04_10m) / (ds.B08_10m + ds.B04_10m)
-                evi = 2.5 * ((ds.B08_10m - ds.B04_10m) / (ds.B08_10m + 6 * ds.B04_10m - 7.5 * ds.B02_10m + 1))
+                mandal = name.split("mandal")[0]
+                rainfall_df = data[(data['Mandal'] == mandal)]
+                rainfall_df['Date'] = pd.to_datetime(rainfall_df['Date'])
+                rainfall_df = rainfall_df.sort_values(by='Date')
+
+                dc = datacube.Datacube(app="04_Plotting")
+                lat_range = (rectangle['min_lat'], rectangle['max_lat'])
+                lon_range = (rectangle['min_lon'], rectangle['max_lon'])
+                ds = dc.load(
+                    product=["s2a_sen2cor_granule","s2b_sen2cor_granule"],
+                    measurements=["red","green","blue", "nir"],
+                    x=lon_range,
+                    y=lat_range,
+                    time=time_range, 
+                    output_crs='EPSG:6933',
+                    resolution=(-30, 30)
+                )
+
+                ndvi = (ds.nir - ds.red) / (ds.nir + ds.red)
+                evi = 2.5 * ((ds.nir - ds.red) / (ds.nir + 6 * ds.red - 7.5 * ds.blue + 1))
 
                 # Create forest masks based on NDVI and EVI thresholds
                 dense_forest_mask = np.where((ndvi > 0.6) & (ndvi < 0.8) & (evi > 0.4), 1, 0)
@@ -95,46 +106,145 @@ def analysis(analysis_type):
                 for i in range(dense_forest_mask.shape[0]):
                     data_time = str(ndvi.time[i].values).split("T")[0]
                     new_data_time = data_time.split("-")
-                    print(dense_forest_mask)
-                    # Calculate the forest cover area for each forest type
+
                     dense_forest_cover_area = np.sum(dense_forest_mask[i]) * pixel_area
                     open_forest_cover_area = np.sum(open_forest_mask[i]) * pixel_area
                     sparse_forest_cover_area = np.sum(sparse_forest_mask[i]) * pixel_area
 
-                    print('areas', dense_forest_cover_area, open_forest_cover_area, sparse_forest_cover_area)
-
-                    # Calculate the total forest cover area
                     total_forest_cover_area = dense_forest_cover_area + open_forest_cover_area + sparse_forest_cover_area
 
                     original_array = np.where(ndvi > -10, 1, 0)
                     original = np.sum(original_array[i]) * pixel_area
-                    
-                    print("1 data added")
 
                     data.append([new_data_time[2], new_data_time[1], new_data_time[0],
                                 dense_forest_cover_area, open_forest_cover_area,
                                 sparse_forest_cover_area, total_forest_cover_area, original])
-                    
+
                 df = pd.DataFrame(data[1:], columns=data[0])
                 df["year-month"] = df["year"].astype('str') + "-" + df["month"].astype('str')
 
+                df['Date'] = pd.to_datetime(df[['year', 'month', 'day']])
+
+                rainfall_df['year-month'] = rainfall_df['Date'].dt.to_period('M')
+                rainfall_df['year-month'] = rainfall_df['year-month'].astype(str)
+                rainfall_df = rainfall_df.groupby(['year-month'])['Rainfall (mm)'].mean().reset_index()
+
+                plot_data = [
+                    go.Scatter(
+                        x = df['Date'],
+                        y = df['forest']/1000000,
+                        name = "Dense Forest",
+                        yaxis="y1",
+                        mode='lines+markers',
+                    ),
+                    go.Scatter(
+                        x = rainfall_df['year-month'],
+                        y = rainfall_df['Rainfall (mm)'],
+                        name = "Rainfall (mm)",
+                        yaxis="y2",
+                        mode='lines+markers',
+                    ),
+                ]
+
+                plot_layout = go.Layout(
+                    title='Dense Forest Cover'
+                )
+                fig = go.Figure(data=plot_data, layout=plot_layout)
+                fig.update_layout(
+                    xaxis_title="Year-Month",
+                    yaxis_title="Dense Forest Area (sq.km)"
+                )
+                fig.update_layout(
+                    yaxis=dict(
+                        title="Dense Forest Area (sq.km)",
+                        side="left",
+                        range=[0, df['forest'].max() / 1000000]  # Set the range for the left y-axis
+                    ),
+                    yaxis2=dict(
+                        title="Rainfall (mm)",
+                        side="right",
+                        overlaying="y",
+                        range=[0, rainfall_df['Rainfall (mm)'].max()]# Set the range for the right y-axis
+                    ),
+                    xaxis=dict(title="Year-Month"),
+                )
+                
+                # Convert plot to JSON
+                plot_json = pio.to_json(fig)
+
+                return jsonify({"plot": plot_json, "type": "Forest vs Rainfall", "area_name": name})
+            
+            coordinates = data['coordinates']
+            study_area_lat = (coordinates[0][0], coordinates[1][0])
+            study_area_lon = (coordinates[1][1], coordinates[2][1])
+
+            dc = datacube.Datacube(app='water_change_analysis')
+
+            ds = dc.load(product='s2a_sen2cor_granule',
+                x=study_area_lon,
+                y=study_area_lat,
+                time=time_range,
+                measurements=['red', 'green', 'blue', 'nir'],
+                output_crs='EPSG:4326',
+                resolution=(-0.00027, 0.00027)
+            )
+            ds = odc.algo.to_f32(ds)
+
+            if analysis_type=="ndvi":
+                res = (ds.nir - ds.red) / (ds.nir + ds.red)
+            elif analysis_type=="ndwi":
+                res = (ds.green - ds.nir) / (ds.green + ds.nir)
+            elif analysis_type=="evi":
+                res = 2.5 * ((ds.nir - ds.red) / (ds.nir + 6 * ds.red - 7.5 * ds.blue + 1))
+                res = xarray.where(~np.isfinite(res), 0.0, res)
+                print(res)
+            elif analysis_type=="forest":
+                ndvi = (ds.nir - ds.red) / (ds.nir + ds.red)
+                evi = 2.5 * ((ds.nir - ds.red) / (ds.nir + 6 * ds.red - 7.5 * ds.blue + 1))
+
+                # Create forest masks based on NDVI and EVI thresholds
+                forest_mask = np.where((ndvi > 0.5) & (evi > 0.2), 1, 0)
+
+                # Calculate the area of each pixel
+                pixel_area = abs(ds.geobox.affine[0] * ds.geobox.affine[4])
+                print('pixel_area', pixel_area)
+
+                data = [['day', 'month', 'year', 'forest', 'total']]
+
+                for i in range(forest_mask.shape[0]):
+                    data_time = str(ndvi.time[i].values).split("T")[0]
+                    new_data_time = data_time.split("-")
+
+                    # Calculate the forest cover area for each forest type
+                    forest_cover_area = np.sum(forest_mask[i]) * pixel_area
+
+                    original_array = np.where(ndvi > -10, 1, 0)
+                    original = np.sum(original_array[i]) * pixel_area
+                    
+                    data.append([new_data_time[2], new_data_time[1], new_data_time[0],
+                                forest_cover_area, original])
+                
+                df = pd.DataFrame(data[1:], columns=data[0])
+                df["year-month"] = df["year"].astype('str') + "-" + df["month"].astype('str')
+
+                grouped_df = df.groupby(['year', 'month'])
+
+                # Step 3: Calculate the mean of 'forest_field' for each group
+                mean_forest_field = grouped_df['forest'].mean()
+
+                # Step 4: Optional - Reset the index of the resulting DataFrame
+                mean_forest_field = mean_forest_field.reset_index()
+                print(mean_forest_field)
+
+                df = mean_forest_field
+
                 X = df[["year", "month"]]
-                y = df["dense_forest"]
-                y2 = df["open_forest"]
-                y3 = df["sparse_forest"]
+                y = df["forest"]
 
                 rf_regressor = RandomForestRegressor(n_estimators=100, random_state=101)
                 rf_regressor.fit(X, y)
-                y_pred = rf_regressor.predict([[2024, 5]])
+                y_pred = rf_regressor.predict(X)
                 print(df, y_pred)
-                rf_regressor2 = RandomForestRegressor(n_estimators=100, random_state=101)
-                rf_regressor2.fit(X, y2)
-                y_pred2 = rf_regressor2.predict([[2024, 5]])
-                print(df, y_pred2)
-                rf_regressor3 = RandomForestRegressor(n_estimators=100, random_state=101)
-                rf_regressor3.fit(X, y3)
-                y_pred3 = rf_regressor3.predict([[2024, 5]])
-                print(df, y_pred3)
 
                 df["year-month"] = df["year"].astype('str') + "-" + df["month"].astype('str')
                 X["year-month"] = X["year"].astype('str') + "-" + X["month"].astype('str')
@@ -144,65 +254,47 @@ def analysis(analysis_type):
                 plot_data = [
                     go.Scatter(
                         x = df['year-month'],
-                        y = df['dense_forest']/1000000,
-                        name = "Dense Actual"
+                        y = df['forest']/1000000,
+                        name = "Forest Actual"
                     ),
                     go.Scatter(
-                        x = ['2024-05'],
+                        x = df['year-month'],
                         y = y_pred/1000000,
-                        name = "Dense Predicted"
-                    ),
-                    go.Scatter(
-                        x = df['year-month'],
-                        y = df['open_forest']/1000000,
-                        name = "Open Actual"
-                    ),
-                    go.Scatter(
-                        x = ['2024-05'],
-                        y = y_pred2/1000000,
-                        name = "Open Predicted"
-                    ),
-                    go.Scatter(
-                        x = df['year-month'],
-                        y = df['sparse_forest']/1000000,
-                        name = "Sparse Actual"
-                    ),
-                    go.Scatter(
-                        x = ['2024-05'],
-                        y = y_pred3/1000000,
-                        name = "Sparse Predicted"
-                    ),
+                        name = "Forest Predicted"
+                    )
                 ]
 
                 print("Plot plotted")
 
                 plot_layout = go.Layout(
-                    title='Dense Forest Cover'
+                    title='Forest Cover'
                 )
                 fig = go.Figure(data=plot_data, layout=plot_layout)
 
+                fig.update_layout(
+                    xaxis_title="Year-Month",
+                    yaxis_title="Forest Area (sq.km.)"
+                )
                 # Convert plot to JSON
                 plot_json = pio.to_json(fig)
 
                 area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
                 print(area_name)
 
-                return jsonify({"plot": plot_json, "type": "Random Forest Analysis", "area_name": area_name, "forestCoverPlot": (df['forest']/1000000).tolist(), "labels": df['year-month'].to_list()})
+                return jsonify({"plot": plot_json, "type": "Random Forest Analysis", "area_name": area_name})
             else:
                 return jsonify({"error": "Invalid type"})
-
-            if analysis_type=="ndvi":
-                cmap = 'YlGn_r'
-            elif analysis_type=="ndwi":
-                cmap = 'cividis'
-
             sub_res = res.isel(time=[0, -1])
-            mean_res = res.mean(dim=['x', 'y'], skipna=True)
-            mean_res_rounded = list(map(lambda x: round(x, 4), mean_res.values.tolist()))
+            print(sub_res)
+
+            mean_res = res.mean(dim=['latitude', 'longitude'], skipna=True)
+            mean_res_rounded = np.array(list(map(lambda x: round(x, 4), mean_res.values.tolist())))
+            mean_res_rounded = mean_res_rounded[np.logical_not(np.isnan(mean_res_rounded))]
+            mean_res_rounded = [0 if (i>1 or i<-1) else i for i in mean_res_rounded]
             labels = list(map(lambda x: x.split('T')[0], [i for i in np.datetime_as_string(res.time.values).tolist()])) 
 
-            plot = sub_res.plot(col='time', col_wrap=2)
-            for ax, time in zip(plot.axes.flat, res.time.values):
+            plot = sub_res.plot(col='time', col_wrap=2, vmin=-1, vmax=1)
+            for ax, time in zip(plot.axes.flat, sub_res.time.values):
                 ax.set_title(str(time).split('T')[0])
 
             now = datetime.now()
@@ -217,7 +309,7 @@ def analysis(analysis_type):
             
             try:
                 area_name = get_area_name(np.mean(study_area_lat), np.mean(study_area_lon))
-                if area_name=="" or type(area_name)!=str:
+                if area_name=="":
                     area_name = "Unknown"
                 print(area_name)
             except:
@@ -249,7 +341,7 @@ def datasets():
     # Print the coordinates
     for coord in coordinates:
         print(coord)
-    print(coordinates)
+    # print(coordinates)
     return jsonify({'coordinates': coordinates})
     
 if __name__ == '__main__':
