@@ -10,6 +10,7 @@
         integrity="sha384-KK94CHFLLe+nY2dmCWGMq91rCGa5gtU4mk92HdvYe+M/SXH301p5ILy+dN9+nJOZ" crossorigin="anonymous">
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+    <link rel="stylesheet" href="/static/loading.css">
 </head>
 
 <body>
@@ -62,9 +63,23 @@
 
     <div class="container">
         <h1 class="modal-title fs-5 mb-3" id="staticBackdropLabel">Analysis Results</h1>
-        <div class="my-3" id="loading" style="overflow-x: auto; min-height: 50px; display: flex; align-items: center;">
-            <div class="spinner-border" role="status"><span class="sr-only"></span></div>
-            <div class="mx-3">Loading... Please wait...</div>
+        <div class="my-3" id="loading"
+            style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; display: none;">
+            <div class="mx-3" style="background: rgba(0, 0, 0, 0.6); border-radius: 15px; padding: 10px;">
+                <div class="loading-container">
+                    <div class="cube">
+                        <div class="sides">
+                            <div class="top"></div>
+                            <div class="right"></div>
+                            <div class="bottom"></div>
+                            <div class="left"></div>
+                            <div class="front"></div>
+                            <div class="back"></div>
+                        </div>
+                    </div>
+                    <div class="text">Loading...</div>
+                </div>
+            </div>
         </div>
         <div class="row" id="outputDiv" style="display: none;">
             <div class="col-lg-6 p-4 mb-4" id="res"
@@ -76,13 +91,17 @@
         </div>
     </div>
 
-    <div class="container" id="randomForest" style="display: none; max-height: 800px; overflow-y: auto; border: 1px solid grey;">
+    <div class="container" id="randomForest"
+        style="display: none; max-height: 800px; overflow-y: auto; border: 1px solid grey;">
         <div id="plot-container"></div>
     </div>
 
-    <div class="container" id="rainfallDiv" style="display: none; max-height: 800px; overflow-y: auto; border: 1px solid grey;">
+    <div class="container" id="rainfallDiv"
+        style="display: none; max-height: 800px; overflow-y: auto; border: 1px solid grey;">
         <div id="plot-container-rainfall"></div>
     </div>
+
+    <button class="scroll-to-top-btn" onclick="scrollToTop()">⮙</button>
 
     <style type="text/css">
         #map {
@@ -132,6 +151,27 @@
         .image-container:hover .zoom-button {
             opacity: 1;
         }
+
+        .scroll-to-top-btn {
+            display: none;
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background-color: rgb(14, 53, 98);
+            color: white;
+            font-size: 32px;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        .scroll-to-top-btn:hover {
+            opacity: 0.7;
+        }
     </style>
 
     <!-- JavaScript code to update the map -->
@@ -172,11 +212,11 @@
 
         function updateListners() {
             // Add event listener to the zoom button
-            document.querySelectorAll('.image-container').forEach(function(container) {
+            document.querySelectorAll('.image-container').forEach(function (container) {
                 var image = container.querySelector('img');
 
                 // Open the zoom overlay on click
-                container.addEventListener('click', function() {
+                container.addEventListener('click', function () {
                     Swal.fire({
                         imageUrl: image.src,
                         imageAlt: 'Image',
@@ -554,6 +594,8 @@
             outputDiv.style.display = "none"
             rainfallDiv.style.display = "none"
             randomForest.style.display = "none"
+            randomForest.innerHTML = ``
+            rainfallDiv.innerHTML = ``
         }
 
         let districtDiv = document.getElementById('districtDiv')
@@ -566,7 +608,26 @@
                 districtDiv.style.display = "none"
             }
         });
-        
+
+        window.onscroll = function () {
+            scrollFunction();
+        };
+
+        function scrollFunction() {
+            var scrollToTopBtn = document.querySelector('.scroll-to-top-btn');
+
+            if (document.body.scrollTop > 20 || document.documentElement.scrollTop > 20) {
+                scrollToTopBtn.style.display = 'block';
+            } else {
+                scrollToTopBtn.style.display = 'none';
+            }
+        }
+
+        function scrollToTop() {
+            document.body.scrollTop = 0; // For Safari
+            document.documentElement.scrollTop = 0; // For Chrome, Firefox, IE, and Opera
+        }
+
         updateListners()
 
     </script>
