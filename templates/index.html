@@ -301,9 +301,15 @@
         });
         map.addControl(drawControl);
 
-        fetch('/datasets').then(data => data.json()).then(data => {
+        fetch('/datasets').then(data => data.json()).then(async data => {
+            console.log(data.coordinates)
             for (const bounds of data.coordinates) {
-                var boundingBox = L.rectangle(bounds, { color: 'red', weight: 2, fill: false });
+                let boundsReversed = bounds.map((e)=>{
+                    return e.map((e1)=>{
+                        return  [e1[1], e1[0]]
+                    })
+                })
+                var boundingBox = L.polygon(boundsReversed, { color: 'red', weight: 2, fill: false });
                 boundingBox.addTo(map);
             }
         }).catch(error => console.log(error))
@@ -626,6 +632,14 @@
         function scrollToTop() {
             document.body.scrollTop = 0; // For Safari
             document.documentElement.scrollTop = 0; // For Chrome, Firefox, IE, and Opera
+        }
+
+        function reverseArrayOfArrays(arr) {
+            arr.reverse();
+            for (let i = 0; i < arr.length; i++) {
+                arr[i].reverse();
+            }
+            return arr;
         }
 
         updateListners()

@@ -323,26 +323,25 @@ def analysis(analysis_type):
 
 @app.route('/datasets', methods=['GET'])
 def datasets():
-    dc = datacube.Datacube()
+    dc = datacube.Datacube(app='datacube-example')
+    product_name = ['s2a_sen2cor_granule']
 
-    product = 's2a_sen2cor_granule'
+    p = []
 
-    # Get the available datasets for the specified product
-    datasets = dc.find_datasets(product=product)
-
-    # Initialize an empty list to store the coordinates
-    coordinates = []
-
-    # Iterate over the datasets and extract the coordinates
-    for dataset in datasets:
-        bounds = dataset.bounds
-        coordinates.append([[bounds.left, bounds.bottom], [bounds.right, bounds.top]])
-
-    # Print the coordinates
-    for coord in coordinates:
-        print(coord)
-    # print(coordinates)
-    return jsonify({'coordinates': coordinates})
+    for j in product_name:
+        datasets = dc.find_datasets(product=j)
+        d = []
+        if len(datasets) == 0:
+            print('No datasets found for the specified query parameters.')
+        else:
+            for i in datasets:
+                ds_loc = i.metadata_doc['geometry']['coordinates']
+                d.append(ds_loc)
+        unique_list = [x for i, x in enumerate(d) if x not in d[:i]]
+        p+=unique_list
+    unique_list = [x for i, x in enumerate(p) if x not in p[:i]]
+    print(unique_list)
+    return jsonify({'coordinates': unique_list})
     
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
