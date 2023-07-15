@@ -76,11 +76,11 @@
         </div>
     </div>
 
-    <div class="container" id="randomForest" style="display: none; height: 800px; overflow-y: auto; border: 1px solid grey;">
+    <div class="container" id="randomForest" style="display: none; max-height: 800px; overflow-y: auto; border: 1px solid grey;">
         <div id="plot-container"></div>
     </div>
 
-    <div class="container" id="rainfallDiv" style="display: none;">
+    <div class="container" id="rainfallDiv" style="display: none; max-height: 800px; overflow-y: auto; border: 1px solid grey;">
         <div id="plot-container-rainfall"></div>
     </div>
 
@@ -330,7 +330,8 @@
                     console.log(plotData)
                     randomForest.style.display = "block"
                     let ele = document.createElement('div')
-                    ele.innerHTML = `<div class="card my-2 shadow">
+                    let plotId = Date.now()
+                    ele.innerHTML = `<div class="card my-2 shadow" id="${'plotDiv' + plotId}">
                         <div class="card-body">
                             <div class="justify-content-center align-items-center mb-2" style="display: flex;">
                                 <svg width="20" height="20" style="margin-right: 10px;">
@@ -338,17 +339,18 @@
                                 </svg>
                                 <h5 class="card-title mb-0">${data.type?.toUpperCase()} - ${data.area_name}</h5>
                             </div>
+                            <div style="overflow-x: auto;">
+                                <div id="${'plot' + plotId}"></div>
+                            </div>
                         </div>
                     </div>`
-                    let plotId = 'plotDiv' + Date.now();
-                    ele.id = plotId;
                     let parentDiv = document.getElementById('plot-container')
                     if (parentDiv.firstChild) {
-                        parentDiv.insertBefore(plotDiv, parentDiv.firstChild);
+                        parentDiv.insertBefore(ele, parentDiv.firstChild);
                     } else {
-                        parentDiv.appendChild(plotDiv);
+                        parentDiv.appendChild(ele);
                     }
-                    Plotly.newPlot(plotId, plotData);
+                    Plotly.newPlot('plot' + plotId, plotData);
                 } catch (error) {
                     console.log(error)
                     Swal.fire('Error', 'An error occured, please try again', 'error')
@@ -378,16 +380,29 @@
                     const plotData = await JSON.parse(data.plot);
                     console.log(plotData)
                     rainfallDiv.style.display = "block"
+
                     let ele = document.createElement('div')
-                    let plotId = 'plotDiv' + Date.now();
-                    ele.id = plotId;
+                    let plotId = Date.now()
+                    ele.innerHTML = `<div class="card my-2 shadow" id="${'plotDiv' + plotId}">
+                        <div class="card-body">
+                            <div class="justify-content-center align-items-center mb-2" style="display: flex;">
+                                <svg width="20" height="20" style="margin-right: 10px;">
+                                    <rect width="20" height="20" style="fill: ${area_colors[area_colors.length - 1]}; stroke: ${area_colors[area_colors.length - 1]}; stroke-width: 5; fill-opacity: 0.2;"></rect>
+                                </svg>
+                                <h5 class="card-title mb-0">${data.type?.toUpperCase()} - ${data.area_name}</h5>
+                            </div>
+                            <div style="overflow-x: auto;">
+                                <div id="${'plot' + plotId}"></div>
+                            </div>
+                        </div>
+                    </div>`
                     let parentDiv = document.getElementById('plot-container-rainfall')
                     if (parentDiv.firstChild) {
-                        parentDiv.insertBefore(plotDiv, parentDiv.firstChild);
+                        parentDiv.insertBefore(ele, parentDiv.firstChild);
                     } else {
-                        parentDiv.appendChild(plotDiv);
+                        parentDiv.appendChild(ele);
                     }
-                    Plotly.newPlot(plotId, plotData);
+                    Plotly.newPlot('plot' + plotId, plotData);
                 } catch (error) {
                     console.log(error)
                     Swal.fire('Error', 'An error occured, please try again', 'error')
@@ -534,7 +549,11 @@
             area_colors = []
             drawnItems.clearLayers();
             res.innerHTML = ``
-            plotContainer.innerHTML = ``
+            chart.destroy()
+            myTableDiv.innerHTML = ``
+            outputDiv.style.display = "none"
+            rainfallDiv.style.display = "none"
+            randomForest.style.display = "none"
         }
 
         let districtDiv = document.getElementById('districtDiv')
